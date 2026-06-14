@@ -1,41 +1,3 @@
-[INFO] Enabling system automatic updates
-[INFO] Restoring Snap updates
-[ OK ] System updates ENABLED
-
-========================================
-        AUTOUPDATES STATUS
-========================================
-
-[ OK ] apt-daily.timer (last: Mon 2026-06-08 21:26:37 +08)
-[ OK ] apt-daily-upgrade.timer (last: Mon 2026-06-08 21:05:45 +08)
-[ OK ] update-notifier-download.timer (last: Mon 2026-06-08 21:26:37 +08)
-[ OK ] fwupd-refresh.timer (last: Mon 2026-06-08 21:05:45 +08)
-[ OK ] unattended-upgrades.service
-
-[ OK ] snap updates enabled
-
-[ OK ] canonical-livepatch (pro)
-
-ls@nova:~$ sudo autoupdates disable
-[INFO] Disabling system automatic updates
-[INFO] Holding Snap updates
-[ OK ] System updates DISABLED
-
-========================================
-        AUTOUPDATES STATUS
-========================================
-
-[ OFF ] apt-daily.timer (disabled)
-[ OFF ] apt-daily-upgrade.timer (disabled)
-[ OFF ] update-notifier-download.timer (disabled)
-[ OFF ] fwupd-refresh.timer (disabled)
-[ OK ] unattended-upgrades.service
-
-[HELD] snap refresh until 2999-12-31T23:59:59Z
-
-[ OK ] canonical-livepatch (pro)
-
-ls@nova:~$ cat bin/autoupdates 
 #!/usr/bin/env bash
 #
 # autoupdates — manage automatic system updates on Ubuntu
@@ -47,7 +9,7 @@ ls@nova:~$ cat bin/autoupdates
 #
 # Manages:
 #   apt-daily.timer, apt-daily-upgrade.timer, unattended-upgrades.service,
-#   update-notifier-download.timer, fwupd-refresh.timer, snap refresh, canonical-livepatch
+#   update-notifier-download.timer, fwupd-refresh.timer, snap refresh
 #
 # Requires: systemd, Ubuntu 20.04+
 
@@ -171,27 +133,19 @@ show_status() {
     echo
 
     if command -v snap >/dev/null 2>&1; then
-        local hold
-        hold=$(snap get system refresh.hold 2>/dev/null || true)
-        if [[ -n "$hold" ]]; then
-            echo "[HELD] snap refresh until $hold"
+        if [[ $EUID -eq 0 ]]; then
+            local hold
+            hold=$(snap get system refresh.hold 2>/dev/null || true)
+            if [[ -n "$hold" ]]; then
+                echo "[HELD] snap refresh until $hold"
+            else
+                echo "[ OK ] snap updates enabled"
+            fi
         else
-            echo "[ OK ] snap updates enabled"
+            echo "[ -- ] snap (run as root to see hold status)"
         fi
     else
         echo "[ -- ] snap (not installed)"
-    fi
-
-    echo
-
-    if ! command -v pro >/dev/null 2>&1; then
-        echo "[ -- ] canonical-livepatch (pro not installed)"
-    elif pro status 2>/dev/null | grep -q "livepatch.*enabled"; then
-        echo "[ OK ] canonical-livepatch (pro)"
-    elif pro status 2>/dev/null | grep -q "attached"; then
-        echo "[ OFF ] canonical-livepatch (pro attached, livepatch disabled)"
-    else
-        echo "[ -- ] canonical-livepatch (pro not active)"
     fi
 
     echo
