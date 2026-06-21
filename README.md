@@ -1,6 +1,6 @@
 # autoupdates
 
-Simple CLI tool to enable/disable automatic updates on Ubuntu systems.
+Simple CLI tool to enable/disable automatic updates on Ubuntu systems
 
 ## What it controls
 
@@ -9,22 +9,37 @@ Simple CLI tool to enable/disable automatic updates on Ubuntu systems.
 - Update notifier background downloads
 - Firmware updates (`fwupd`)
 - Snap automatic refresh (via hold mechanism)
-- Ubuntu Pro Livepatch status (read-only)
 
 ## Usage
 
+### Enable Updates (Standard Schedule)
+Enables background configuration and lets systemd run updates based on its regular cycle.
 ```bash
-sudo autoupdates enable   # enable all automatic updates
-sudo autoupdates disable  # disable all automatic updates
-autoupdates status        # show current status
+sudo autoupdates enable
+# or
+sudo autoupdates on
 ```
 
-Aliases:
-
+### Enable Updates and Run Immediately
+Forces the update and security upgrade processes to run **right now** by passing the force flag.
 ```bash
-sudo autoupdates on
+sudo autoupdates enable --force
+# or
+sudo autoupdates on -f
+```
+
+### Freeze All Updates
+```bash
+sudo autoupdates disable
+# or
 sudo autoupdates off
 ```
+
+### Check Current State
+```bash
+autoupdates status
+```
+
 
 ## Installation
 
@@ -37,7 +52,6 @@ sudo chmod +x /usr/local/bin/autoupdates
 
 - Snap updates are controlled via `refresh.hold`
 - Firmware updates are managed via `fwupd`
-- Livepatch is managed via Ubuntu Pro (`pro`) and is not modified by this tool
 - The tool does not remove packages or modify system configuration beyond enabling/disabling services
 
 ## Purpose
