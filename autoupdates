@@ -3,13 +3,13 @@
 # autoupdates — manage automatic system updates on Ubuntu
 #
 # Usage:
-#   sudo autoupdates enable | on     enable apt timers, unattended-upgrades, snap
-#   sudo autoupdates disable | off   disable all of the above, hold snap indefinitely
-#   autoupdates status               show current state
+#   sudo autoupdates enable [ -f | --force ]   enable apt timers, optionally trigger now
+#   sudo autoupdates disable                   disable all timers and hold snap indefinitely
+#   autoupdates status                         show current state
 #
 # Manages:
 #   apt-daily.timer, apt-daily-upgrade.timer, unattended-upgrades.service,
-#   update-notifier-download.timer, fwupd-refresh.timer, snap refresh
+#   update-notifier-download.timer, fwupd-refresh.timer
 #
 # Requires: systemd, Ubuntu 20.04+
 
@@ -37,6 +37,13 @@ require_root() {
 }
 
 enable_updates() {
+    local force_trigger=0
+    
+    # Parse potential force flags
+    if [[ "${1:-}" == "-f" || "${1:-}" == "--force" ]]; then
+        force_trigger=1
+    fi
+
     info "Enabling system automatic updates"
 
     local failed=0
@@ -44,7 +51,7 @@ enable_updates() {
         systemctl enable --now "$unit" >/dev/null 2>&1 || { err "Failed to enable $unit"; failed=1; }
     done
     
-    # Включаем автозапуск и запускаем фоновый процесс отслеживания выключения
+    # Enable and start the unattended-upgrades service
     systemctl enable --now unattended-upgrades.service >/dev/null 2>&1 || { err "Failed to enable unattended-upgrades.service"; failed=1; }
 
     cat > "$APT_CFG" <<EOF
@@ -54,12 +61,25 @@ APT::Periodic::Unattended-Upgrade "1";
 EOF
 
     if command -v snap >/dev/null 2>&1; then
-        info "Restoring Snap updates"
+        info "Restoring Snap updates to automatic schedule"
         snap unset system refresh.hold  >/dev/null 2>&1 || true
         snap unset system refresh.timer >/dev/null 2>&1 || true
     fi
 
-    [[ $failed -eq 0 ]] && ok "System updates ENABLED" || { err "System updates enabled with errors"; return 1; }
+    if [[ $failed -eq 0 ]]; then
+        ok "System updates ENABLED"
+        
+        # Instantly trigger the systemd timers only if the force flag is present
+        if [[ $force_trigger -eq 1 ]]; then
+            info "Force flag detected. Triggering systemd timers immediately..."
+            systemctl trigger apt-daily.timer apt-daily-upgrade.timer >/dev/null 2>&1 || true
+        else
+            info "Updates will run normally according to the systemd schedule."
+        fi
+    else
+        err "System updates enabled with errors"
+        return 1
+    fi
 }
 
 disable_updates() {
@@ -70,7 +90,7 @@ disable_updates() {
         systemctl disable --now "$unit" >/dev/null 2>&1 || { err "Failed to disable $unit"; failed=1; }
     done
     
-    # Выключаем автозапуск и принудительно останавливаем (убиваем) фоновый процесс-демон
+    # Disable and stop the unattended-upgrades service completely
     systemctl disable --now unattended-upgrades.service >/dev/null 2>&1 || { err "Failed to disable unattended-upgrades.service"; failed=1; }
 
     cat > "$APT_CFG" <<EOF
@@ -97,7 +117,7 @@ show_status() {
     show_unit() {
         local name="$1"
         
-        # Специфичная проверка для службы обновлений
+        # Specific check for the upgrade service
         if [[ "$name" == "unattended-upgrades.service" ]]; then
             if systemctl is-enabled "$name" >/dev/null 2>&1; then
                 echo "[ OK ] $name (enabled for apt-timers)"
@@ -107,7 +127,7 @@ show_status() {
             return
         fi
 
-        # Стандартная проверка для таймеров
+        # Standard check for timers
         if systemctl is-active "$name" >/dev/null 2>&1; then
             local trigger=""
             [[ "$name" == *.timer ]] && trigger=$(last_trigger "$name")
@@ -173,23 +193,26 @@ usage() {
 autoupdates — manage automatic system updates
 
 Usage:
-  sudo autoupdates enable | on     enable all automatic updates
-  sudo autoupdates disable | off   disable all automatic updates
-  autoupdates status               show current state
+  sudo autoupdates enable | on [options]  enable all automatic updates
+  sudo autoupdates disable | off          disable all automatic updates
+  autoupdates status                      show current state
+
+Options:
+  -f, --force                             instantly trigger updates when enabling
 
 Examples:
-  sudo autoupdates disable         disable before system maintenance
-  sudo autoupdates enable          re-enable after maintenance
-  autoupdates status               check current state
+  sudo autoupdates enable                 enable updates (standard schedule)
+  sudo autoupdates enable --force         enable updates and run them right now
+  sudo autoupdates disable                disable before system maintenance
+  autoupdates status                      check current state
 
 EOF
     exit 1
 }
 
 case "${1:-}" in
-    enable|on)   require_root; enable_updates;  show_status ;;
+    enable|on)   require_root; enable_updates "${2:-}";  show_status ;;
     disable|off) require_root; disable_updates; show_status ;;
     status)      show_status ;;
     *)           usage ;;
 esac
-
