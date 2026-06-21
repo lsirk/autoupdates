@@ -36,12 +36,40 @@ require_root() {
     fi
 }
 
+usage() {
+    cat <<EOF
+
+autoupdates — manage automatic system updates
+
+Usage:
+  sudo autoupdates enable | on [options]  enable all automatic updates
+  sudo autoupdates disable | off          disable all automatic updates
+  autoupdates status                      show current state
+
+Options:
+  -f, --force                             instantly trigger updates when enabling
+
+Examples:
+  sudo autoupdates enable                 enable updates (standard schedule)
+  sudo autoupdates enable --force         enable updates and run them right now
+  sudo autoupdates disable                disable before system maintenance
+  autoupdates status                      check current state
+
+EOF
+    exit 1
+}
+
 enable_updates() {
     local force_trigger=0
     
-    # Parse potential force flags
-    if [[ "${1:-}" == "-f" || "${1:-}" == "--force" ]]; then
-        force_trigger=1
+    # Strict validation of the second argument if present
+    if [[ -n "${1:-}" ]]; then
+        if [[ "$1" == "-f" || "$1" == "--force" ]]; then
+            force_trigger=1
+        else
+            err "Unknown option: '$1'"
+            usage
+        fi
     fi
 
     info "Enabling system automatic updates"
@@ -69,10 +97,14 @@ EOF
     if [[ $failed -eq 0 ]]; then
         ok "System updates ENABLED"
         
-        # Instantly trigger the systemd timers only if the force flag is present
+        # Instantly run synchronous apt updates if the force flag is present
         if [[ $force_trigger -eq 1 ]]; then
-            info "Force flag detected. Triggering systemd timers immediately..."
-            systemctl trigger apt-daily.timer apt-daily-upgrade.timer >/dev/null 2>&1 || true
+            info "Force flag detected. Running APT index update..."
+            apt-get update -y >/dev/null 2>&1 || true
+            
+            info "Running unattended-upgrades in foreground..."
+            unattended-upgrade -v || true
+            ok "Forced update process completed"
         else
             info "Updates will run normally according to the systemd schedule."
         fi
@@ -83,6 +115,12 @@ EOF
 }
 
 disable_updates() {
+    # Ensure no extra arguments are passed to disable
+    if [[ -n "${1:-}" ]]; then
+        err "Disable command does not accept extra options: '$1'"
+        usage
+    fi
+
     info "Disabling system automatic updates"
 
     local failed=0
@@ -108,6 +146,12 @@ EOF
 }
 
 show_status() {
+    # Ensure no extra arguments are passed to status
+    if [[ -n "${1:-}" ]]; then
+        err "Status command does not accept extra options: '$1'"
+        usage
+    fi
+
     last_trigger() {
         local ts
         ts=$(systemctl show "$1" --property=LastTriggerUSec 2>/dev/null | cut -d= -f2)
@@ -187,32 +231,33 @@ show_status() {
     echo
 }
 
-usage() {
-    cat <<EOF
+# Main command dispatcher with strict arguments verification
+main() {
+    local cmd="${1:-}"
 
-autoupdates — manage automatic system updates
-
-Usage:
-  sudo autoupdates enable | on [options]  enable all automatic updates
-  sudo autoupdates disable | off          disable all automatic updates
-  autoupdates status                      show current state
-
-Options:
-  -f, --force                             instantly trigger updates when enabling
-
-Examples:
-  sudo autoupdates enable                 enable updates (standard schedule)
-  sudo autoupdates enable --force         enable updates and run them right now
-  sudo autoupdates disable                disable before system maintenance
-  autoupdates status                      check current state
-
-EOF
-    exit 1
+    case "$cmd" in
+        enable|on)
+            require_root
+            enable_updates "${2:-}"
+            show_status
+            ;;
+        disable|off)
+            require_root
+            disable_updates "${2:-}"
+            show_status
+            ;;
+        status)
+            show_status "${2:-}"
+            ;;
+            
+        # If any third-party argument or typo is passed as a command
+        *)
+            if [[ -n "$cmd" ]]; then
+                err "Unknown command: '$cmd'"
+            fi
+            usage
+            ;;
+    esac
 }
 
-case "${1:-}" in
-    enable|on)   require_root; enable_updates "${2:-}";  show_status ;;
-    disable|off) require_root; disable_updates; show_status ;;
-    status)      show_status ;;
-    *)           usage ;;
-esac
+main "$@"
