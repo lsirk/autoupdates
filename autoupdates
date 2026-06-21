@@ -43,7 +43,9 @@ enable_updates() {
     for unit in "${APT_TIMERS[@]}"; do
         systemctl enable --now "$unit" >/dev/null 2>&1 || { err "Failed to enable $unit"; failed=1; }
     done
-    systemctl enable unattended-upgrades.service >/dev/null 2>&1 || { err "Failed to enable unattended-upgrades.service"; failed=1; }
+    
+    # Включаем автозапуск и запускаем фоновый процесс отслеживания выключения
+    systemctl enable --now unattended-upgrades.service >/dev/null 2>&1 || { err "Failed to enable unattended-upgrades.service"; failed=1; }
 
     cat > "$APT_CFG" <<EOF
 APT::Periodic::Update-Package-Lists "1";
@@ -67,7 +69,9 @@ disable_updates() {
     for unit in "${APT_TIMERS[@]}"; do
         systemctl disable --now "$unit" >/dev/null 2>&1 || { err "Failed to disable $unit"; failed=1; }
     done
-    systemctl disable unattended-upgrades.service >/dev/null 2>&1 || { err "Failed to disable unattended-upgrades.service"; failed=1; }
+    
+    # Выключаем автозапуск и принудительно останавливаем (убиваем) фоновый процесс-демон
+    systemctl disable --now unattended-upgrades.service >/dev/null 2>&1 || { err "Failed to disable unattended-upgrades.service"; failed=1; }
 
     cat > "$APT_CFG" <<EOF
 APT::Periodic::Update-Package-Lists "0";
@@ -92,6 +96,18 @@ show_status() {
 
     show_unit() {
         local name="$1"
+        
+        # Специфичная проверка для службы обновлений
+        if [[ "$name" == "unattended-upgrades.service" ]]; then
+            if systemctl is-enabled "$name" >/dev/null 2>&1; then
+                echo "[ OK ] $name (enabled for apt-timers)"
+            else
+                echo "[ OFF ] $name (disabled)"
+            fi
+            return
+        fi
+
+        # Стандартная проверка для таймеров
         if systemctl is-active "$name" >/dev/null 2>&1; then
             local trigger=""
             [[ "$name" == *.timer ]] && trigger=$(last_trigger "$name")
@@ -176,3 +192,4 @@ case "${1:-}" in
     status)      show_status ;;
     *)           usage ;;
 esac
+
