@@ -97,13 +97,20 @@ EOF
     if [[ $failed -eq 0 ]]; then
         ok "System updates ENABLED"
         
-        # Instantly run synchronous apt updates if the force flag is present
+        # Instantly run synchronous updates if the force flag is present
         if [[ $force_trigger -eq 1 ]]; then
             info "Force flag detected. Running APT index update..."
             apt-get update -y >/dev/null 2>&1 || true
             
             info "Running unattended-upgrades in foreground..."
             unattended-upgrade -v || true
+
+            # Forced Snap update block
+            if command -v snap >/dev/null 2>&1; then
+                info "Running Snap refresh..."
+                snap refresh || true
+            fi
+            
             ok "Forced update process completed"
         else
             info "Updates will run normally according to the systemd schedule."
